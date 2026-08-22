@@ -13,13 +13,17 @@ import (
 )
 
 type ManagedServer struct {
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Transport   string    `json:"transport"`
-	Connected   bool      `json:"connected"`
-	LastError   string    `json:"last_error,omitempty"`
-	ToolCount   int       `json:"tool_count"`
-	CachedAt    time.Time `json:"cached_at,omitempty"`
+	Name               string    `json:"name"`
+	Description        string    `json:"description,omitempty"`
+	Transport          string    `json:"transport"`
+	State              string    `json:"state"`
+	Connected          bool      `json:"connected"`
+	LastError          string    `json:"last_error,omitempty"`
+	ToolCount          int       `json:"tool_count"`
+	CachedAt           time.Time `json:"cached_at,omitempty"`
+	ProjectArgument    string    `json:"project_argument,omitempty"`
+	ProjectRequired    bool      `json:"project_required,omitempty"`
+	AnnotationsTrusted bool      `json:"annotations_trusted,omitempty"`
 }
 
 type cachedTools struct {
@@ -27,21 +31,23 @@ type cachedTools struct {
 	at    time.Time
 }
 type managedSession struct {
-	mu      sync.Mutex
-	session *mcp.ClientSession
-	cfg     config.Server
-	tools   cachedTools
-	lastErr string
+	mu           sync.Mutex
+	session      *mcp.ClientSession
+	cfg          config.Server
+	tools        cachedTools
+	instructions string
+	lastErr      string
 }
 
 type Manager struct {
 	mu       sync.RWMutex
 	servers  map[string]*managedSession
+	projects map[string]string
 	cacheTTL time.Duration
 }
 
 func NewManager(reg config.Registry, ttl time.Duration) *Manager {
-	m := &Manager{servers: map[string]*managedSession{}, cacheTTL: ttl}
+	m := &Manager{servers: map[string]*managedSession{}, projects: map[string]string{}, cacheTTL: ttl}
 	m.Reload(reg)
 	return m
 }
@@ -65,6 +71,10 @@ func (m *Manager) Reload(reg config.Registry) {
 			m.servers[name] = &managedSession{cfg: srv}
 		}
 	}
+	m.projects = make(map[string]string, len(reg.Projects))
+	for name, path := range reg.Projects {
+		m.projects[name] = path
+	}
 }
 
 func (m *Manager) get(name string) (*managedSession, error) {
@@ -87,6 +97,9 @@ func (m *Manager) session(ctx context.Context, name string, ms *managedSession) 
 		return nil, err
 	}
 	ms.session = s
+	if init := s.InitializeResult(); init != nil {
+		ms.instructions = init.Instructions
+	}
 	ms.lastErr = ""
 	return s, nil
 }
@@ -129,6 +142,98 @@ func (m *Manager) ListTools(ctx context.Context, name string, force bool) ([]*mc
 	ms.tools = cachedTools{tools: filtered, at: time.Now()}
 	ms.lastErr = ""
 	return append([]*mcp.Tool(nil), filtered...), nil
+}
+
+func (m *Manager) ProjectNames() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	names := make([]string, 0, len(m.projects))
+	for name := range m.projects {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (m *Manager) ServerInstructions(name string) string {
+	ms, err := m.get(name)
+	if err != nil {
+		return ""
+	}
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	return ms.instructions
+}
+
+func (m *Manager) PrepareToolArguments(server, project string, args map[string]any) (map[string]any, error) {
+	ms, err := m.get(server)
+	if err != nil {
+		return nil, err
+	}
+	ms.mu.Lock()
+	cfg := ms.cfg
+	ms.mu.Unlock()
+	out := make(map[string]any, len(args)+1)
+	for k, v := range args {
+		out[k] = v
+	}
+	if cfg.ProjectArgument == "" {
+		if project != "" {
+			return nil, fmt.Errorf("server %q does not support project selection", server)
+		}
+		return out, nil
+	}
+	if _, ok := out[cfg.ProjectArgument]; ok {
+		return nil, fmt.Errorf("use project alias instead of raw %s", cfg.ProjectArgument)
+	}
+	if project == "" {
+		if cfg.RequireProject {
+			return nil, fmt.Errorf("project is required for server %q", server)
+		}
+		return out, nil
+	}
+	m.mu.RLock()
+	path, ok := m.projects[project]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("unknown project %q", project)
+	}
+	out[cfg.ProjectArgument] = path
+	return out, nil
+}
+
+func (m *Manager) CallReadOnlyTool(ctx context.Context, server, tool string, args map[string]any) (*mcp.CallToolResult, error) {
+	ms, err := m.get(server)
+	if err != nil {
+		return nil, err
+	}
+	ms.mu.Lock()
+	trusted := ms.cfg.TrustAnnotations
+	ms.mu.Unlock()
+	if !trusted {
+		return nil, fmt.Errorf("server %q is not trusted for annotation-based read-only calls", server)
+	}
+	tools, err := m.ListTools(ctx, server, true)
+	if err != nil {
+		return nil, err
+	}
+	found, readOnly := toolReadOnly(tools, tool)
+	if !found {
+		return nil, fmt.Errorf("tool %q not found on server %q", tool, server)
+	}
+	if !readOnly {
+		return nil, fmt.Errorf("tool %q on server %q is not declared read-only", tool, server)
+	}
+	return m.CallTool(ctx, server, tool, args)
+}
+
+func toolReadOnly(tools []*mcp.Tool, name string) (found, readOnly bool) {
+	for _, t := range tools {
+		if t.Name == name {
+			return true, t.Annotations != nil && t.Annotations.ReadOnlyHint
+		}
+	}
+	return false, false
 }
 
 func (m *Manager) CallTool(ctx context.Context, server, tool string, args map[string]any) (*mcp.CallToolResult, error) {
@@ -178,7 +283,13 @@ func (m *Manager) Status() []ManagedServer {
 	for _, n := range names {
 		ms, _ := m.get(n)
 		ms.mu.Lock()
-		v := ManagedServer{Name: n, Description: ms.cfg.Description, Transport: ms.cfg.TransportName(), Connected: ms.session != nil, LastError: ms.lastErr, ToolCount: len(ms.tools.tools), CachedAt: ms.tools.at}
+		state := "idle"
+		if ms.session != nil {
+			state = "connected"
+		} else if ms.lastErr != "" {
+			state = "error"
+		}
+		v := ManagedServer{Name: n, Description: ms.cfg.Description, Transport: ms.cfg.TransportName(), State: state, Connected: ms.session != nil, LastError: ms.lastErr, ToolCount: len(ms.tools.tools), CachedAt: ms.tools.at, ProjectArgument: ms.cfg.ProjectArgument, ProjectRequired: ms.cfg.RequireProject, AnnotationsTrusted: ms.cfg.TrustAnnotations}
 		ms.mu.Unlock()
 		out = append(out, v)
 	}

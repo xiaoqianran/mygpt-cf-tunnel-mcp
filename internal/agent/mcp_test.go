@@ -1,6 +1,12 @@
 package agent
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
 
 func TestCallRequestToolArguments(t *testing.T) {
 	t.Run("arguments json", func(t *testing.T) {
@@ -28,4 +34,40 @@ func TestCallRequestToolArguments(t *testing.T) {
 			t.Fatal("expected JSON object error")
 		}
 	})
+}
+
+func TestLimitToolResult(t *testing.T) {
+	res := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: strings.Repeat("项目源码", 3000)}}}
+	got := limitToolResult(res, 4096)
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) > 4096 {
+		t.Fatalf("limited result still too large: %d", len(b))
+	}
+	text := got.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "网关已截断") {
+		t.Fatalf("missing truncation marker: %q", text[len(text)-80:])
+	}
+}
+
+func TestOpenAPISchema(t *testing.T) {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(openAPISchema), &doc); err != nil {
+		t.Fatal(err)
+	}
+	paths := doc["paths"].(map[string]any)
+	if paths["/v1/mcp/tools/call-readonly"] == nil {
+		t.Fatal("missing read-only call path")
+	}
+	components := doc["components"].(map[string]any)
+	schemas := components["schemas"].(map[string]any)
+	call := schemas["CallToolRequest"].(map[string]any)
+	props := call["properties"].(map[string]any)
+	for _, key := range []string{"server", "tool", "project", "arguments_json"} {
+		if props[key] == nil {
+			t.Fatalf("missing CallToolRequest property %q", key)
+		}
+	}
 }

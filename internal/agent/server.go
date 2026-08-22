@@ -34,6 +34,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /v1/mcp/status", s.auth(http.HandlerFunc(s.serverStatus)))
 	mux.Handle("POST /v1/mcp/tools/search", s.auth(http.HandlerFunc(s.searchTools)))
 	mux.Handle("POST /v1/mcp/tools/call", s.auth(http.HandlerFunc(s.callTool)))
+	mux.Handle("POST /v1/mcp/tools/call-readonly", s.auth(http.HandlerFunc(s.callReadOnlyTool)))
 	mux.Handle("POST /v1/mcp/resources/list", s.auth(http.HandlerFunc(s.listResources)))
 	mux.Handle("POST /v1/mcp/resources/read", s.auth(http.HandlerFunc(s.readResource)))
 	mux.Handle("POST /v1/mcp/prompts/list", s.auth(http.HandlerFunc(s.listPrompts)))
@@ -59,7 +60,7 @@ func (s *Server) logging(next http.Handler) http.Handler {
 	})
 }
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "version": "0.4.0"})
+	writeJSON(w, 200, map[string]any{"ok": true, "version": "0.5.0"})
 }
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

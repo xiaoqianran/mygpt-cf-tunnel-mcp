@@ -35,3 +35,13 @@ func TestTransportName(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestServerProjectValidation(t *testing.T) {
+	err := (Server{Transport: "stdio", Command: "x", RequireProject: true}).Validate("codegraph")
+	if err == nil {
+		t.Fatal("expected project_argument validation error")
+	}
+	if err := (Server{Transport: "stdio", Command: "x", ProjectArgument: "projectPath", RequireProject: true}).Validate("codegraph"); err != nil {
+		t.Fatal(err)
+	}
+}

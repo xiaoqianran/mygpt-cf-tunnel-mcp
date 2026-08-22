@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,25 +21,29 @@ type Config struct {
 }
 
 type Registry struct {
-	Servers map[string]Server `json:"servers"`
+	Servers  map[string]Server `json:"servers"`
+	Projects map[string]string `json:"projects,omitempty"`
 }
 
 type Server struct {
-	Transport      string            `json:"transport,omitempty"`
-	URL            string            `json:"url,omitempty"`
-	Description    string            `json:"description,omitempty"`
-	TokenEnv       string            `json:"token_env,omitempty"`
-	Command        string            `json:"command,omitempty"`
-	Args           []string          `json:"args,omitempty"`
-	Env            map[string]string `json:"env,omitempty"`
-	WorkingDir     string            `json:"working_dir,omitempty"`
-	Enabled        *bool             `json:"enabled,omitempty"`
-	AllowTools     []string          `json:"allow_tools,omitempty"`
-	DenyTools      []string          `json:"deny_tools,omitempty"`
-	AllowResources []string          `json:"allow_resources,omitempty"`
-	DenyResources  []string          `json:"deny_resources,omitempty"`
-	AllowPrompts   []string          `json:"allow_prompts,omitempty"`
-	DenyPrompts    []string          `json:"deny_prompts,omitempty"`
+	Transport        string            `json:"transport,omitempty"`
+	URL              string            `json:"url,omitempty"`
+	Description      string            `json:"description,omitempty"`
+	TokenEnv         string            `json:"token_env,omitempty"`
+	Command          string            `json:"command,omitempty"`
+	Args             []string          `json:"args,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	WorkingDir       string            `json:"working_dir,omitempty"`
+	Enabled          *bool             `json:"enabled,omitempty"`
+	AllowTools       []string          `json:"allow_tools,omitempty"`
+	DenyTools        []string          `json:"deny_tools,omitempty"`
+	AllowResources   []string          `json:"allow_resources,omitempty"`
+	DenyResources    []string          `json:"deny_resources,omitempty"`
+	AllowPrompts     []string          `json:"allow_prompts,omitempty"`
+	DenyPrompts      []string          `json:"deny_prompts,omitempty"`
+	ProjectArgument  string            `json:"project_argument,omitempty"`
+	RequireProject   bool              `json:"require_project,omitempty"`
+	TrustAnnotations bool              `json:"trust_annotations,omitempty"`
 }
 
 func Load() (Config, error) {
@@ -59,6 +65,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("TOOL_CACHE_TTL: %w", err)
 	}
+	cfg.MaxResponseBytes, err = strconv.ParseInt(env("MAX_RESPONSE_BYTES", "1048576"), 10, 64)
+	if err != nil || cfg.MaxResponseBytes < 4096 {
+		return Config{}, errors.New("MAX_RESPONSE_BYTES must be an integer >= 4096")
+	}
 	return cfg, nil
 }
 
@@ -73,6 +83,18 @@ func LoadRegistry(path string) (Registry, error) {
 	}
 	if r.Servers == nil {
 		r.Servers = map[string]Server{}
+	}
+	if r.Projects == nil {
+		r.Projects = map[string]string{}
+	}
+	for name, path := range r.Projects {
+		if strings.TrimSpace(name) == "" {
+			return Registry{}, errors.New("project name cannot be empty")
+		}
+		if !filepath.IsAbs(path) {
+			return Registry{}, fmt.Errorf("project %q: path must be absolute", name)
+		}
+		r.Projects[name] = filepath.Clean(path)
 	}
 	for name, srv := range r.Servers {
 		if err := srv.Validate(name); err != nil {
@@ -100,6 +122,9 @@ func (s Server) Validate(name string) error {
 		}
 	default:
 		return fmt.Errorf("server %q: unsupported transport %q", name, s.Transport)
+	}
+	if s.RequireProject && strings.TrimSpace(s.ProjectArgument) == "" {
+		return fmt.Errorf("server %q: project_argument required when require_project is true", name)
 	}
 	return nil
 }

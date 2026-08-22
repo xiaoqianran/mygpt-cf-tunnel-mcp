@@ -45,7 +45,7 @@ func Connect(ctx context.Context, alias string, srv config.Server) (*mcp.ClientS
 	default:
 		return nil, fmt.Errorf("MCP server %q has unsupported transport %q", alias, srv.Transport)
 	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "mygpt-cf-tunnel-mcp", Version: "0.4.0"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "mygpt-cf-tunnel-mcp", Version: "0.5.0"}, nil)
 	sess, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect %s: %w", alias, err)

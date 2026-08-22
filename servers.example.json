@@ -1,24 +1,30 @@
 {
+  "projects": {
+    "example": "/srv/example-repo"
+  },
   "servers": {
     "context7": {
       "transport": "streamable_http",
       "url": "https://mcp.context7.com/mcp",
-      "description": "Up-to-date library and framework documentation",
+      "description": "最新的库和框架文档",
       "allow_tools": ["resolve-library-id", "query-docs"]
     },
     "deepwiki": {
       "transport": "streamable_http",
       "url": "https://mcp.deepwiki.com/mcp",
-      "description": "DeepWiki documentation and Q&A for public GitHub repositories",
+      "description": "公开 GitHub 仓库的文档与问答",
       "deny_tools": ["delete_*"]
     },
     "codegraph": {
       "transport": "stdio",
-      "command": "codegraph",
-      "args": ["serve", "--mcp"],
+      "command": "/usr/local/bin/codegraph",
+      "args": ["serve", "--mcp", "--path", "/srv/example-repo"],
       "working_dir": "/srv/example-repo",
-      "description": "Local CodeGraph MCP",
-      "allow_tools": ["codegraph_explore"]
+      "description": "本地代码知识图谱",
+      "allow_tools": ["codegraph_explore"],
+      "project_argument": "projectPath",
+      "require_project": true,
+      "trust_annotations": true
     }
   }
 }

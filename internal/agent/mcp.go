@@ -31,9 +31,21 @@ type toolView struct {
 	InputSchema any    `json:"input_schema,omitempty"`
 }
 type callRequest struct {
-	Server    string         `json:"server"`
-	Tool      string         `json:"tool"`
-	Arguments map[string]any `json:"arguments,omitempty"`
+	Server        string         `json:"server"`
+	Tool          string         `json:"tool"`
+	Arguments     map[string]any `json:"arguments,omitempty"`
+	ArgumentsJSON string         `json:"arguments_json,omitempty"`
+}
+
+func (r callRequest) toolArguments() (map[string]any, error) {
+	if strings.TrimSpace(r.ArgumentsJSON) == "" {
+		return r.Arguments, nil
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(r.ArgumentsJSON), &args); err != nil {
+		return nil, err
+	}
+	return args, nil
 }
 
 func (s *Server) syncRegistry() error {
@@ -142,9 +154,14 @@ func (s *Server) callTool(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": "server and tool are required"})
 		return
 	}
+	args, err := req.toolArguments()
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"error": "arguments_json must be a JSON object"})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.RequestTimeout)
 	defer cancel()
-	res, err := s.mcp.CallTool(ctx, req.Server, req.Tool, req.Arguments)
+	res, err := s.mcp.CallTool(ctx, req.Server, req.Tool, args)
 	if err != nil {
 		writeJSON(w, 502, map[string]any{"error": err.Error()})
 		return

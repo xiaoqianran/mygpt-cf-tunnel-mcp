@@ -44,6 +44,20 @@ MyGPT 对外只暴露三个核心 Action：
 
 后端仍完整保留 MCP Tools、Resources、Prompts、Status、缓存、策略和 Session 管理能力，只是不把这些低频管理/协议能力暴露给 MyGPT，减少 Action 数量和模型选择负担。
 
+`searchMcpTools` 返回上游工具的 `input_schema`。调用工具时，MyGPT 将对应参数编码为 JSON 对象字符串放入 `arguments_json`。这样可以稳定承载不同 MCP 工具各自的动态参数结构，不依赖 Action 对自由形态对象的支持。
+
+例如调用 CodeGraph：
+
+```json
+{
+  "server": "codegraph-mcp-gateway",
+  "tool": "codegraph_explore",
+  "arguments_json": "{\"query\":\"Manager.CallTool 的调用链和错误重连逻辑\",\"maxFiles\":8}"
+}
+```
+
+HTTP 层仍兼容旧的 `arguments` 对象字段；MyGPT Action 只暴露 `arguments_json`。
+
 ### Tool cache
 
 `tools/list` 结果由 Gateway 缓存，默认 TTL：

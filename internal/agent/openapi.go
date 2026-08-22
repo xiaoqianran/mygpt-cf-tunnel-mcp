@@ -120,7 +120,7 @@ const openAPISchema = `{
         "properties":{
           "server":{"type":"string","description":"Registered MCP server alias"},
           "tool":{"type":"string","description":"Exact tool name returned by searchMcpTools"},
-          "arguments":{"type":"object","additionalProperties":true,"description":"Arguments matching the tool input_schema"}
+          "arguments_json":{"type":"string","default":"{}","description":"JSON object encoded as a string. Build it from the input_schema returned by searchMcpTools. Example: {\"query\":\"how does auth work\",\"maxFiles\":12}"}
         },
         "required":["server","tool"]
       }

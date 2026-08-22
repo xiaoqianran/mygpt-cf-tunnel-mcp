@@ -36,22 +36,13 @@ Custom GPT
 
 ### MCP primitives
 
-Tools：
+MyGPT 对外只暴露三个核心 Action：
 
 - `listMcpServers`
-- `getMcpStatus`
 - `searchMcpTools`
 - `callMcpTool`
 
-Resources：
-
-- `listMcpResources`
-- `readMcpResource`
-
-Prompts：
-
-- `listMcpPrompts`
-- `getMcpPrompt`
+后端仍完整保留 MCP Tools、Resources、Prompts、Status、缓存、策略和 Session 管理能力，只是不把这些低频管理/协议能力暴露给 MyGPT，减少 Action 数量和模型选择负担。
 
 ### Tool cache
 

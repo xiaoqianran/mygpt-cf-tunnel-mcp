@@ -22,10 +22,8 @@ The project provides the MCP Host layer normally built into coding agents: regis
 - persistent MCP sessions and automatic reconnect
 - TTL-cached tool discovery
 - per-server allow/deny policies for tools, resources and prompts
-- Tools: list/search/call
-- Resources: list/read
-- Prompts: list/get
-- runtime status endpoint
+- Minimal MyGPT Action surface: `listMcpServers`, `searchMcpTools`, `callMcpTool`
+- Backend still supports Tools, Resources, Prompts and runtime status internally
 - automatic registry reload
 - `mygpt-mcpctl` CLI for add/list/remove/enable/disable/validate
 - no arbitrary upstream URLs in Action requests

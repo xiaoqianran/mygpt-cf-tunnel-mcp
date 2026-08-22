@@ -21,10 +21,15 @@ type Registry struct {
 }
 
 type Server struct {
-	URL         string `json:"url"`
-	Description string `json:"description,omitempty"`
-	TokenEnv    string `json:"token_env,omitempty"`
-	Enabled     *bool  `json:"enabled,omitempty"`
+	Transport   string            `json:"transport,omitempty"`
+	URL         string            `json:"url,omitempty"`
+	Description string            `json:"description,omitempty"`
+	TokenEnv    string            `json:"token_env,omitempty"`
+	Command     string            `json:"command,omitempty"`
+	Args        []string          `json:"args,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	WorkingDir  string            `json:"working_dir,omitempty"`
+	Enabled     *bool             `json:"enabled,omitempty"`
 }
 
 func Load() (Config, error) {

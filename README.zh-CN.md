@@ -39,9 +39,7 @@ Custom GPT
 
 ## v0.1 范围
 
-只支持**远程 Streamable HTTP MCP**，使用官方 `modelcontextprotocol/go-sdk`。
-
-暂时不把 stdio MCP 混入第一版。未来即使增加 stdio transport，也只属于服务端 registry 的实现细节，MyGPT Action API 不变。
+v0.2 同时支持 **本地 stdio MCP** 与 **远程 Streamable HTTP MCP**，使用官方 `modelcontextprotocol/go-sdk`。stdio 配置会像 CodeBuddy、Grok、Claude Code 一样启动子进程并通过 stdin/stdout 与 MCP Server 通信。
 
 ## Registry
 

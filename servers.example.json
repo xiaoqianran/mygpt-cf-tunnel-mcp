@@ -1,9 +1,21 @@
 {
   "servers": {
-    "example": {
-      "url": "https://mcp.example.com/mcp",
-      "description": "Example remote MCP server",
-      "token_env": "EXAMPLE_MCP_TOKEN"
+    "context7": {
+      "transport": "streamable_http",
+      "url": "https://mcp.context7.com/mcp",
+      "description": "Up-to-date library and framework documentation"
+    },
+    "deepwiki": {
+      "transport": "streamable_http",
+      "url": "https://mcp.deepwiki.com/mcp",
+      "description": "DeepWiki documentation and Q&A for public GitHub repositories"
+    },
+    "codegraph-example": {
+      "transport": "stdio",
+      "command": "codegraph",
+      "args": ["serve", "--mcp"],
+      "working_dir": "/srv/example-repo",
+      "description": "Local CodeGraph for one indexed repository"
     }
   }
 }

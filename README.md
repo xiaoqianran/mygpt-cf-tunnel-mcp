@@ -38,9 +38,7 @@ Custom GPT
 
 ## MCP transport
 
-v0.1 targets **remote Streamable HTTP MCP**. It uses the official Go SDK (`github.com/modelcontextprotocol/go-sdk`) and disables the optional standalone SSE stream, which fits request/response gateway traffic and the 2026 stateless direction.
-
-Local stdio MCP is intentionally not part of v0.1. If needed later, add it as a second registry transport without changing the MyGPT Action API.
+v0.2 supports both **local stdio MCP** and **remote Streamable HTTP MCP** using the official Go SDK (`github.com/modelcontextprotocol/go-sdk`). Local entries are launched as subprocesses exactly like coding-agent MCP configurations; remote entries connect directly to `/mcp` endpoints.
 
 ## Configuration
 

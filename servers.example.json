@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "example": {
+      "url": "https://mcp.example.com/mcp",
+      "description": "Example remote MCP server",
+      "token_env": "EXAMPLE_MCP_TOKEN"
+    }
+  }
+}

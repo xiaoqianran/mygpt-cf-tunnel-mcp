@@ -16,6 +16,6 @@ const openAPISchema = `{
     "/v1/mcp/tools/search":{"post":{"operationId":"searchMcpTools","summary":"Discover MCP tools by keyword","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"query":{"type":"string","description":"Keyword or capability to search for"},"server":{"type":"string","description":"Optional registered MCP server alias"},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["query"]}}}},"responses":{"200":{"description":"Matching MCP tools"}}}},
     "/v1/mcp/tools/call":{"post":{"operationId":"callMcpTool","summary":"Call one tool on a registered MCP server","x-openai-isConsequential":true,"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"server":{"type":"string"},"tool":{"type":"string"},"arguments":{"type":"object","additionalProperties":true}},"required":["server","tool"]}}}},"responses":{"200":{"description":"MCP tool result"}}}}
   },
-  "components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}}},
+  "components":{"schemas":{},"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}}},
   "security":[{"bearerAuth":[]}]
 }`

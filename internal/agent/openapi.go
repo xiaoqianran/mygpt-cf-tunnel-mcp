@@ -9,8 +9,8 @@ func (s *Server) openAPI(w http.ResponseWriter, r *http.Request) {
 
 const openAPISchema = `{
   "openapi":"3.1.0",
-  "info":{"title":"MyGPT MCP Gateway","version":"0.1.0","description":"Connect a Custom GPT Action to registered remote MCP servers."},
-  "servers":[{"url":"https://mcp-agent.example.com"}],
+  "info":{"title":"MyGPT MCP Gateway","version":"0.2.0","description":"Connect a Custom GPT Action to registered remote MCP servers."},
+  "servers":[{"url":"https://arm-sg-mcp.202820.xyz"}],
   "paths":{
     "/v1/mcp/servers":{"get":{"operationId":"listMcpServers","summary":"List configured MCP servers","responses":{"200":{"description":"Configured server aliases"}}}},
     "/v1/mcp/tools/search":{"post":{"operationId":"searchMcpTools","summary":"Discover MCP tools by keyword","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"query":{"type":"string","description":"Keyword or capability to search for"},"server":{"type":"string","description":"Optional registered MCP server alias"},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["query"]}}}},"responses":{"200":{"description":"Matching MCP tools"}}}},

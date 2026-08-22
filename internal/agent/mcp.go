@@ -7,19 +7,22 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/xiaoqianran/mygpt-cf-tunnel-mcp/internal/config"
-	"github.com/xiaoqianran/mygpt-cf-tunnel-mcp/internal/mcpclient"
 )
 
 type serverView struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	Transport   string `json:"transport"`
+	Connected   bool   `json:"connected"`
+	ToolCount   int    `json:"tool_count"`
+	LastError   string `json:"last_error,omitempty"`
 }
 type searchRequest struct {
-	Query  string `json:"query"`
-	Server string `json:"server,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
+	Query   string `json:"query"`
+	Server  string `json:"server,omitempty"`
+	Limit   int    `json:"limit,omitempty"`
+	Refresh bool   `json:"refresh,omitempty"`
 }
 type toolView struct {
 	Server      string `json:"server"`
@@ -33,23 +36,49 @@ type callRequest struct {
 	Arguments map[string]any `json:"arguments,omitempty"`
 }
 
-func (s *Server) registry() (config.Registry, error) { return config.LoadRegistry(s.cfg.RegistryPath) }
-func (s *Server) listServers(w http.ResponseWriter, r *http.Request) {
-	reg, err := s.registry()
+func (s *Server) syncRegistry() error {
+	reg, err := config.LoadRegistry(s.cfg.RegistryPath)
+	if err != nil {
+		return err
+	}
+	s.mcp.Reload(reg)
+	return nil
+}
+
+func (s *Server) reloadRegistry(w http.ResponseWriter, r *http.Request) {
+	reg, err := config.LoadRegistry(s.cfg.RegistryPath)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	out := make([]serverView, 0, len(reg.Servers))
-	for name, v := range reg.Servers {
-		if v.IsEnabled() {
-			out = append(out, serverView{Name: name, Description: v.Description})
-		}
+	s.mcp.Reload(reg)
+	writeJSON(w, 200, map[string]any{"ok": true, "servers": len(reg.Servers)})
+}
+
+func (s *Server) listServers(w http.ResponseWriter, r *http.Request) {
+	if err := s.syncRegistry(); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	statuses := s.mcp.Status()
+	out := make([]serverView, 0, len(statuses))
+	for _, v := range statuses {
+		out = append(out, serverView{Name: v.Name, Description: v.Description, Transport: v.Transport, Connected: v.Connected, ToolCount: v.ToolCount, LastError: v.LastError})
+	}
 	writeJSON(w, 200, map[string]any{"servers": out})
 }
+func (s *Server) serverStatus(w http.ResponseWriter, r *http.Request) {
+	if err := s.syncRegistry(); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"servers": s.mcp.Status()})
+}
 func (s *Server) searchTools(w http.ResponseWriter, r *http.Request) {
+	if err := s.syncRegistry(); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
 	var req searchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]any{"error": "invalid JSON"})
@@ -59,23 +88,24 @@ func (s *Server) searchTools(w http.ResponseWriter, r *http.Request) {
 	if req.Limit <= 0 || req.Limit > 50 {
 		req.Limit = 20
 	}
-	reg, err := s.registry()
-	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
-		return
-	}
-	names := make([]string, 0, len(reg.Servers))
+	statuses := s.mcp.Status()
+	names := make([]string, 0, len(statuses))
 	if req.Server != "" {
-		if _, ok := reg.Servers[req.Server]; !ok {
+		found := false
+		for _, v := range statuses {
+			if v.Name == req.Server {
+				found = true
+				break
+			}
+		}
+		if !found {
 			writeJSON(w, 404, map[string]any{"error": "unknown server"})
 			return
 		}
 		names = []string{req.Server}
 	} else {
-		for n, v := range reg.Servers {
-			if v.IsEnabled() {
-				names = append(names, n)
-			}
+		for _, v := range statuses {
+			names = append(names, v.Name)
 		}
 		sort.Strings(names)
 	}
@@ -84,18 +114,12 @@ func (s *Server) searchTools(w http.ResponseWriter, r *http.Request) {
 	matches := []toolView{}
 	q := strings.ToLower(req.Query)
 	for _, name := range names {
-		sess, e := mcpclient.Connect(ctx, name, reg.Servers[name])
-		if e != nil {
-			s.log.Warn("mcp connect failed", "server", name, "error", e)
-			continue
-		}
-		res, e := sess.ListTools(ctx, nil)
-		_ = sess.Close()
+		tools, e := s.mcp.ListTools(ctx, name, req.Refresh)
 		if e != nil {
 			s.log.Warn("mcp list failed", "server", name, "error", e)
 			continue
 		}
-		for _, t := range res.Tools {
+		for _, t := range tools {
 			hay := strings.ToLower(t.Name + " " + t.Description)
 			if q == "" || strings.Contains(hay, q) {
 				matches = append(matches, toolView{Server: name, Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
@@ -109,30 +133,113 @@ func (s *Server) searchTools(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"tools": matches})
 }
 func (s *Server) callTool(w http.ResponseWriter, r *http.Request) {
+	if err := s.syncRegistry(); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
 	var req callRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Server == "" || req.Tool == "" {
 		writeJSON(w, 400, map[string]any{"error": "server and tool are required"})
 		return
 	}
-	reg, err := s.registry()
-	if err != nil {
-		writeJSON(w, 500, map[string]any{"error": err.Error()})
-		return
-	}
-	srv, ok := reg.Servers[req.Server]
-	if !ok {
-		writeJSON(w, 404, map[string]any{"error": "unknown server"})
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.RequestTimeout)
 	defer cancel()
-	sess, err := mcpclient.Connect(ctx, req.Server, srv)
+	res, err := s.mcp.CallTool(ctx, req.Server, req.Tool, req.Arguments)
 	if err != nil {
 		writeJSON(w, 502, map[string]any{"error": err.Error()})
 		return
 	}
-	defer sess.Close()
-	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: req.Tool, Arguments: req.Arguments})
+	writeJSON(w, 200, res)
+}
+
+type listResourceRequest struct {
+	Server string `json:"server"`
+	Cursor string `json:"cursor,omitempty"`
+}
+type readResourceRequest struct {
+	Server string `json:"server"`
+	URI    string `json:"uri"`
+}
+type listPromptRequest struct {
+	Server string `json:"server"`
+	Cursor string `json:"cursor,omitempty"`
+}
+type getPromptRequest struct {
+	Server    string            `json:"server"`
+	Prompt    string            `json:"prompt"`
+	Arguments map[string]string `json:"arguments,omitempty"`
+}
+
+func (s *Server) listResources(w http.ResponseWriter, r *http.Request) {
+	if err := s.syncRegistry(); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	var req listResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Server == "" {
+		writeJSON(w, 400, map[string]any{"error": "server is required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.RequestTimeout)
+	defer cancel()
+	res, err := s.mcp.ListResources(ctx, req.Server, req.Cursor)
+	if err != nil {
+		writeJSON(w, 502, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, res)
+}
+func (s *Server) readResource(w http.ResponseWriter, r *http.Request) {
+	if err := s.syncRegistry(); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	var req readResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Server == "" || req.URI == "" {
+		writeJSON(w, 400, map[string]any{"error": "server and uri are required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.RequestTimeout)
+	defer cancel()
+	res, err := s.mcp.ReadResource(ctx, req.Server, req.URI)
+	if err != nil {
+		writeJSON(w, 502, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, res)
+}
+func (s *Server) listPrompts(w http.ResponseWriter, r *http.Request) {
+	if err := s.syncRegistry(); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	var req listPromptRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Server == "" {
+		writeJSON(w, 400, map[string]any{"error": "server is required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.RequestTimeout)
+	defer cancel()
+	res, err := s.mcp.ListPrompts(ctx, req.Server, req.Cursor)
+	if err != nil {
+		writeJSON(w, 502, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, res)
+}
+func (s *Server) getPrompt(w http.ResponseWriter, r *http.Request) {
+	if err := s.syncRegistry(); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	var req getPromptRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Server == "" || req.Prompt == "" {
+		writeJSON(w, 400, map[string]any{"error": "server and prompt are required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.RequestTimeout)
+	defer cancel()
+	res, err := s.mcp.GetPrompt(ctx, req.Server, req.Prompt, req.Arguments)
 	if err != nil {
 		writeJSON(w, 502, map[string]any{"error": err.Error()})
 		return

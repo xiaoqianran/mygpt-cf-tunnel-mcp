@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -13,6 +14,7 @@ type Config struct {
 	APIToken         string
 	RegistryPath     string
 	RequestTimeout   time.Duration
+	ToolCacheTTL     time.Duration
 	MaxResponseBytes int64
 }
 
@@ -21,15 +23,21 @@ type Registry struct {
 }
 
 type Server struct {
-	Transport   string            `json:"transport,omitempty"`
-	URL         string            `json:"url,omitempty"`
-	Description string            `json:"description,omitempty"`
-	TokenEnv    string            `json:"token_env,omitempty"`
-	Command     string            `json:"command,omitempty"`
-	Args        []string          `json:"args,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
-	WorkingDir  string            `json:"working_dir,omitempty"`
-	Enabled     *bool             `json:"enabled,omitempty"`
+	Transport      string            `json:"transport,omitempty"`
+	URL            string            `json:"url,omitempty"`
+	Description    string            `json:"description,omitempty"`
+	TokenEnv       string            `json:"token_env,omitempty"`
+	Command        string            `json:"command,omitempty"`
+	Args           []string          `json:"args,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	WorkingDir     string            `json:"working_dir,omitempty"`
+	Enabled        *bool             `json:"enabled,omitempty"`
+	AllowTools     []string          `json:"allow_tools,omitempty"`
+	DenyTools      []string          `json:"deny_tools,omitempty"`
+	AllowResources []string          `json:"allow_resources,omitempty"`
+	DenyResources  []string          `json:"deny_resources,omitempty"`
+	AllowPrompts   []string          `json:"allow_prompts,omitempty"`
+	DenyPrompts    []string          `json:"deny_prompts,omitempty"`
 }
 
 func Load() (Config, error) {
@@ -47,6 +55,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("REQUEST_TIMEOUT: %w", err)
 	}
+	cfg.ToolCacheTTL, err = time.ParseDuration(env("TOOL_CACHE_TTL", "5m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("TOOL_CACHE_TTL: %w", err)
+	}
 	return cfg, nil
 }
 
@@ -59,13 +71,87 @@ func LoadRegistry(path string) (Registry, error) {
 	if err := json.Unmarshal(b, &r); err != nil {
 		return Registry{}, err
 	}
-	if len(r.Servers) == 0 {
-		return Registry{}, errors.New("registry has no servers")
+	if r.Servers == nil {
+		r.Servers = map[string]Server{}
+	}
+	for name, srv := range r.Servers {
+		if err := srv.Validate(name); err != nil {
+			return Registry{}, err
+		}
 	}
 	return r, nil
 }
 
 func (s Server) IsEnabled() bool { return s.Enabled == nil || *s.Enabled }
+
+func (s Server) Validate(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return errors.New("server name cannot be empty")
+	}
+	t := s.TransportName()
+	switch t {
+	case "streamable_http":
+		if s.URL == "" {
+			return fmt.Errorf("server %q: url required", name)
+		}
+	case "stdio":
+		if s.Command == "" {
+			return fmt.Errorf("server %q: command required", name)
+		}
+	default:
+		return fmt.Errorf("server %q: unsupported transport %q", name, s.Transport)
+	}
+	return nil
+}
+
+func (s Server) TransportName() string {
+	t := strings.ToLower(strings.TrimSpace(s.Transport))
+	if t == "" && s.URL != "" {
+		return "streamable_http"
+	}
+	if t == "http" || t == "streamable-http" {
+		return "streamable_http"
+	}
+	return t
+}
+
+func (s Server) ToolAllowed(name string) bool {
+	return allowedByPolicy(name, s.AllowTools, s.DenyTools)
+}
+func (s Server) ResourceAllowed(uri string) bool {
+	return allowedByPolicy(uri, s.AllowResources, s.DenyResources)
+}
+func (s Server) PromptAllowed(name string) bool {
+	return allowedByPolicy(name, s.AllowPrompts, s.DenyPrompts)
+}
+
+func allowedByPolicy(value string, allow, deny []string) bool {
+	for _, p := range deny {
+		if matchTool(p, value) {
+			return false
+		}
+	}
+	if len(allow) == 0 {
+		return true
+	}
+	for _, p := range allow {
+		if matchTool(p, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchTool(pattern, name string) bool {
+	if pattern == "*" || pattern == name {
+		return true
+	}
+	if strings.HasSuffix(pattern, "*") {
+		return strings.HasPrefix(name, strings.TrimSuffix(pattern, "*"))
+	}
+	return false
+}
+
 func env(k, d string) string {
 	if v := os.Getenv(k); v != "" {
 		return v

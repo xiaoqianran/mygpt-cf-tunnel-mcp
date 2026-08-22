@@ -1,110 +1,85 @@
 # mygpt-cf-tunnel-mcp
 
-A **standalone MCP Action Gateway** for ChatGPT Custom GPTs.
+A standalone **MCP Host for ChatGPT Custom GPT / MyGPT Actions**.
 
-It is deliberately separate from [`mygpt-cf-tunnel`](https://github.com/xiaoqianran/mygpt-cf-tunnel): the command project owns remote shell execution; this project owns MCP discovery and invocation only.
+It complements [`mygpt-cf-tunnel`](https://github.com/xiaoqianran/mygpt-cf-tunnel): the command project owns remote shell execution; this project owns MCP integration only.
 
 ## Architecture
 
 ```text
 Custom GPT
-  ├─ Action A → command.example.com → mygpt-cf-tunnel → /bin/bash -lc
-  └─ Action B → mcp.example.com     → this project
-                                      ├─ listMcpServers
-                                      ├─ searchMcpTools
-                                      └─ callMcpTool
-                                             ↓
-                                   registered remote MCP servers
-                                   (Streamable HTTP /mcp)
+  ├─ Command Action → mygpt-cf-tunnel → /bin/bash -lc
+  └─ MCP Action     → mygpt-cf-tunnel-mcp :8788
+                         ├─ stdio MCP subprocesses
+                         └─ remote Streamable HTTP MCP servers
 ```
 
-**Trust boundary:** the GPT sends only a registered `server` alias, tool name, and arguments. It cannot supply arbitrary upstream URLs. MCP URLs and upstream credentials live on the VPS.
+The project provides the MCP Host layer normally built into coding agents: registry management, stdio process launch, remote connections, session reuse, tool discovery and MCP invocation.
 
-## Why a separate repo
+## v0.4
 
-- independent Action schema and domain
-- independent API token and Cloudflare Tunnel ingress
-- independent release / rollback / logs
-- no shell execution in the MCP gateway
-- compromise of an MCP credential does not expose the command gateway token
+- stdio + Streamable HTTP transports
+- persistent MCP sessions and automatic reconnect
+- TTL-cached tool discovery
+- per-server allow/deny policies for tools, resources and prompts
+- Tools: list/search/call
+- Resources: list/read
+- Prompts: list/get
+- runtime status endpoint
+- automatic registry reload
+- `mygpt-mcpctl` CLI for add/list/remove/enable/disable/validate
+- no arbitrary upstream URLs in Action requests
 
-## Action surface
-
-- `listMcpServers` — list safe server aliases
-- `searchMcpTools` — discover tools without dumping every tool schema into the GPT context
-- `callMcpTool` — call a discovered tool
-
-`callMcpTool` is marked consequential in the OpenAPI schema because an upstream MCP tool may mutate external state.
-
-## MCP transport
-
-v0.2 supports both **local stdio MCP** and **remote Streamable HTTP MCP** using the official Go SDK (`github.com/modelcontextprotocol/go-sdk`). Local entries are launched as subprocesses exactly like coding-agent MCP configurations; remote entries connect directly to `/mcp` endpoints.
-
-## Configuration
+## CLI
 
 ```bash
-cp .env.example /etc/mygpt-mcp/agent.env
-cp servers.example.json /etc/mygpt-mcp/servers.json
+mygpt-mcpctl list
+mygpt-mcpctl validate
+mygpt-mcpctl add-http context7 https://mcp.context7.com/mcp
+mygpt-mcpctl add-stdio codegraph /usr/local/bin/codegraph serve --mcp
+mygpt-mcpctl disable context7
+mygpt-mcpctl enable context7
+mygpt-mcpctl remove context7
 ```
 
-Example registry:
+## Registry
 
 ```json
 {
   "servers": {
-    "my-service": {
-      "url": "https://mcp.example.com/mcp",
-      "description": "Production tools",
-      "token_env": "MY_SERVICE_MCP_TOKEN"
+    "codegraph": {
+      "transport": "stdio",
+      "command": "/usr/local/bin/codegraph",
+      "args": ["serve", "--mcp"],
+      "working_dir": "/srv/project",
+      "allow_tools": ["codegraph_explore"]
+    },
+    "context7": {
+      "transport": "streamable_http",
+      "url": "https://mcp.context7.com/mcp",
+      "allow_tools": ["resolve-library-id", "query-docs"]
     }
   }
 }
 ```
 
-`token_env` is optional and is resolved only on the gateway host.
+For runtimes installed through fnm/nvm/uv and not visible in the systemd PATH, use an absolute command path or set a per-server `env.PATH`.
+
+## Deployment
+
+```text
+Listen:  127.0.0.1:8788
+Public:  https://arm-sg-mcp.202820.xyz
+Schema:  https://arm-sg-mcp.202820.xyz/openapi.json
+```
+
+Authentication is Bearer-based and configured with `API_TOKEN` in `/etc/mygpt-mcp/agent.env`.
 
 ## Build
 
 ```bash
+go test ./...
+go vet ./...
 go build -o mygpt-mcp-agent ./cmd/mygpt-mcp-agent
+go build -o mygpt-mcpctl ./cmd/mygpt-mcpctl
 ```
-
-## Cloudflare Tunnel
-
-Use a **different hostname** from the command gateway:
-
-```yaml
-ingress:
-  - hostname: command.example.com
-    service: http://127.0.0.1:8787
-  - hostname: mcp.example.com
-    service: http://127.0.0.1:8788
-  - service: http_status:404
-```
-
-Then import:
-
-```text
-https://mcp.example.com/openapi.json
-```
-
-as a separate Custom GPT Action and configure Bearer authentication with this service's `API_TOKEN`.
-
-## Security model
-
-1. No arbitrary upstream MCP URL in Action requests.
-2. Upstream secrets are environment variables, never GPT arguments.
-3. Registry is server-controlled and can disable aliases.
-4. Remote MCP must use HTTPS, except explicit localhost endpoints.
-5. Gateway has no command-execution endpoint.
-6. Keep `API_TOKEN` distinct from `mygpt-cf-tunnel`.
-
-## Roadmap
-
-- cached tool index with TTL
-- OAuth-backed upstream MCP servers
-- per-server/per-tool allow and deny rules
-- output-size enforcement and structured truncation
-- audit IDs and call logging
-- optional stdio transport
-- health probes per upstream

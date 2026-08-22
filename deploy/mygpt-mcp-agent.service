@@ -1,5 +1,5 @@
 [Unit]
-Description=MyGPT MCP Action Gateway
+Description=MyGPT MCP Host
 After=network-online.target
 Wants=network-online.target
 
@@ -11,9 +11,8 @@ ExecStart=/usr/local/bin/mygpt-mcp-agent
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadOnlyPaths=/etc/mygpt-mcp
+ProtectSystem=full
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

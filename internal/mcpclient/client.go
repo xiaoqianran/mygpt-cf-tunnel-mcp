@@ -28,9 +28,8 @@ func Connect(ctx context.Context, alias string, srv config.Server) (*mcp.ClientS
 	if !srv.IsEnabled() {
 		return nil, fmt.Errorf("MCP server %q is disabled", alias)
 	}
-
 	var transport mcp.Transport
-	switch normalizedTransport(srv) {
+	switch srv.TransportName() {
 	case "streamable_http":
 		t, err := httpTransport(alias, srv)
 		if err != nil {
@@ -46,8 +45,7 @@ func Connect(ctx context.Context, alias string, srv config.Server) (*mcp.ClientS
 	default:
 		return nil, fmt.Errorf("MCP server %q has unsupported transport %q", alias, srv.Transport)
 	}
-
-	client := mcp.NewClient(&mcp.Implementation{Name: "mygpt-cf-tunnel-mcp", Version: "0.2.0"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "mygpt-cf-tunnel-mcp", Version: "0.4.0"}, nil)
 	sess, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect %s: %w", alias, err)
@@ -55,21 +53,7 @@ func Connect(ctx context.Context, alias string, srv config.Server) (*mcp.ClientS
 	return sess, nil
 }
 
-func normalizedTransport(srv config.Server) string {
-	t := strings.ToLower(strings.TrimSpace(srv.Transport))
-	if t == "" && srv.URL != "" {
-		return "streamable_http"
-	}
-	if t == "http" || t == "streamable-http" {
-		return "streamable_http"
-	}
-	return t
-}
-
 func httpTransport(alias string, srv config.Server) (mcp.Transport, error) {
-	if srv.URL == "" {
-		return nil, fmt.Errorf("MCP server %q requires url", alias)
-	}
 	if !strings.HasPrefix(srv.URL, "https://") && !strings.HasPrefix(srv.URL, "http://127.0.0.1") && !strings.HasPrefix(srv.URL, "http://localhost") {
 		return nil, fmt.Errorf("MCP server %q URL must use https (localhost is allowed)", alias)
 	}
@@ -81,17 +65,10 @@ func httpTransport(alias string, srv config.Server) (mcp.Transport, error) {
 		}
 		hc.Transport = bearerTransport{token: token, base: http.DefaultTransport}
 	}
-	return &mcp.StreamableClientTransport{
-		Endpoint:             srv.URL,
-		HTTPClient:           hc,
-		DisableStandaloneSSE: true,
-	}, nil
+	return &mcp.StreamableClientTransport{Endpoint: srv.URL, HTTPClient: hc, DisableStandaloneSSE: true}, nil
 }
 
 func stdioTransport(alias string, srv config.Server) (mcp.Transport, error) {
-	if srv.Command == "" {
-		return nil, fmt.Errorf("MCP server %q requires command", alias)
-	}
 	cmd := exec.Command(srv.Command, srv.Args...)
 	if srv.WorkingDir != "" {
 		cmd.Dir = srv.WorkingDir
@@ -100,7 +77,6 @@ func stdioTransport(alias string, srv config.Server) (mcp.Transport, error) {
 	for k, v := range srv.Env {
 		cmd.Env = append(cmd.Env, k+"="+os.ExpandEnv(v))
 	}
-	// stderr is intentionally inherited by the service log. stdout belongs to MCP JSON-RPC.
 	cmd.Stderr = os.Stderr
 	return &mcp.CommandTransport{Command: cmd}, nil
 }

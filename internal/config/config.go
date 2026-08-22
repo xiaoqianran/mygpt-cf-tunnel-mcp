@@ -26,24 +26,23 @@ type Registry struct {
 }
 
 type Server struct {
-	Transport        string            `json:"transport,omitempty"`
-	URL              string            `json:"url,omitempty"`
-	Description      string            `json:"description,omitempty"`
-	TokenEnv         string            `json:"token_env,omitempty"`
-	Command          string            `json:"command,omitempty"`
-	Args             []string          `json:"args,omitempty"`
-	Env              map[string]string `json:"env,omitempty"`
-	WorkingDir       string            `json:"working_dir,omitempty"`
-	Enabled          *bool             `json:"enabled,omitempty"`
-	AllowTools       []string          `json:"allow_tools,omitempty"`
-	DenyTools        []string          `json:"deny_tools,omitempty"`
-	AllowResources   []string          `json:"allow_resources,omitempty"`
-	DenyResources    []string          `json:"deny_resources,omitempty"`
-	AllowPrompts     []string          `json:"allow_prompts,omitempty"`
-	DenyPrompts      []string          `json:"deny_prompts,omitempty"`
-	ProjectArgument  string            `json:"project_argument,omitempty"`
-	RequireProject   bool              `json:"require_project,omitempty"`
-	TrustAnnotations bool              `json:"trust_annotations,omitempty"`
+	Transport       string            `json:"transport,omitempty"`
+	URL             string            `json:"url,omitempty"`
+	Description     string            `json:"description,omitempty"`
+	TokenEnv        string            `json:"token_env,omitempty"`
+	Command         string            `json:"command,omitempty"`
+	Args            []string          `json:"args,omitempty"`
+	Env             map[string]string `json:"env,omitempty"`
+	WorkingDir      string            `json:"working_dir,omitempty"`
+	Enabled         *bool             `json:"enabled,omitempty"`
+	AllowTools      []string          `json:"allow_tools,omitempty"`
+	DenyTools       []string          `json:"deny_tools,omitempty"`
+	AllowResources  []string          `json:"allow_resources,omitempty"`
+	DenyResources   []string          `json:"deny_resources,omitempty"`
+	AllowPrompts    []string          `json:"allow_prompts,omitempty"`
+	DenyPrompts     []string          `json:"deny_prompts,omitempty"`
+	ProjectArgument string            `json:"project_argument,omitempty"`
+	RequireProject  bool              `json:"require_project,omitempty"`
 }
 
 func Load() (Config, error) {

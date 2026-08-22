@@ -26,16 +26,15 @@ MyGPT
                            └─ 其他 MCP server
 ```
 
-Gateway 保持很薄：它不理解 AST、类、调用图，也不替上游 MCP 做领域规划；它只保留 MCP 原本提供给 Agent 的语义，并执行确定性的安全策略。
+Gateway 保持很薄：它不理解 AST、类、调用图，也不替上游 MCP 做领域规划；它只保留 MCP 原本提供给 Agent 的语义，并执行项目身份、连接和返回边界等确定性规则。
 
-## v0.5 核心能力
+## v0.6 核心能力
 
-### MyGPT 只暴露四个 Action
+### MyGPT 只暴露三个 Action
 
-- `listMcpServers`：发现已注册 server 和允许使用的项目别名。
+- `listMcpServers`：发现已注册 server 和项目别名。
 - `searchMcpTools`：发现工具，并返回 `input_schema`、`output_schema`、`annotations` 和 `server_instructions`。
-- `callReadOnlyMcpTool`：只调用受信任 server 且明确声明 `readOnlyHint=true` 的工具，网关会再次刷新并校验。
-- `callMcpTool`：调用未声明只读或可能产生副作用的工具，保留确认边界。
+- `callMcpTool`：统一调用已注册 MCP 工具，不再区分只读和写入入口。
 
 Resources、Prompts、Status、Reload 等 MCP 能力仍保留在后端 HTTP API，不额外占用 MyGPT 的 Action 工具面。
 
@@ -65,7 +64,7 @@ HTTP 层仍兼容旧的 `arguments` 对象字段。
 - `annotations.idempotentHint`
 - `annotations.openWorldHint`
 
-这些信息用于帮助 MyGPT 正确选择和调用工具。Annotations 是上游提示，不替代 Registry、allow/deny 和服务器端校验。
+这些信息只用于帮助 MyGPT 理解工具性质和正确构造调用，不再参与只读/写入权限分流。当前部署按受信任的全权限 Agent 模型运行。
 
 ### 项目身份
 
@@ -84,8 +83,7 @@ HTTP 层仍兼容旧的 `arguments` 对象字段。
       "args": ["serve", "--mcp", "--path", "/opt/mygpt-cf-tunnel-mcp"],
       "working_dir": "/opt/mygpt-cf-tunnel-mcp",
       "project_argument": "projectPath",
-      "require_project": true,
-      "trust_annotations": true
+      "require_project": true
     }
   }
 }
@@ -145,7 +143,7 @@ MAX_RESPONSE_BYTES=1048576
 
 ## Registry 策略
 
-每个 MCP server 可以设置：
+当前生产部署默认全权限：不配置 allow/deny 即允许已注册 server 暴露的全部能力。若以后确实需要局部收紧，每个 MCP server 仍可选设置：
 
 ```json
 {
@@ -156,8 +154,7 @@ MAX_RESPONSE_BYTES=1048576
   "allow_prompts": ["review-*"],
   "deny_prompts": ["admin-*"],
   "project_argument": "projectPath",
-  "require_project": true,
-  "trust_annotations": true
+  "require_project": true
 }
 ```
 
@@ -187,10 +184,10 @@ Registry 修改会在下一次 MCP Action 请求时自动同步。Server 配置�
 - Command Action 和 MCP Action 使用独立服务、端口和认证。
 - GPT 不能动态指定 MCP URL，避免 Gateway 变成 SSRF Proxy。
 - 上游 token 通过 `token_env` 从 VPS 环境变量读取，不进入 GPT 参数。
-- Tool / Resource / Prompt 由 allow/deny policy 约束。
-- `callReadOnlyMcpTool` 只接受管理员显式设置 `trust_annotations=true`，且当前工具元数据中 `readOnlyHint=true` 的工具。
+- 当前生产 Registry 不设置 allow/deny，已注册 MCP 能力默认全部可用；策略字段仅作为可选收紧机制保留。
+- `annotations` 只作为 MCP 语义元数据返回，不决定是否允许调用。
 - 项目绝对路径由服务端 Registry 持有，不暴露为 MyGPT 自由输入。
-- systemd 使用 `NoNewPrivileges=true`、`ProtectSystem=full`、`PrivateTmp=true`。
+- systemd 以 `User=root` 运行，不启用 `NoNewPrivileges`、`ProtectSystem`、`PrivateTmp` 沙箱，使 stdio MCP 子进程继承完整 root 权限。
 
 ## 当前部署
 

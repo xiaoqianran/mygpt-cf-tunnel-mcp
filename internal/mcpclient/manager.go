@@ -13,17 +13,16 @@ import (
 )
 
 type ManagedServer struct {
-	Name               string    `json:"name"`
-	Description        string    `json:"description,omitempty"`
-	Transport          string    `json:"transport"`
-	State              string    `json:"state"`
-	Connected          bool      `json:"connected"`
-	LastError          string    `json:"last_error,omitempty"`
-	ToolCount          int       `json:"tool_count"`
-	CachedAt           time.Time `json:"cached_at,omitempty"`
-	ProjectArgument    string    `json:"project_argument,omitempty"`
-	ProjectRequired    bool      `json:"project_required,omitempty"`
-	AnnotationsTrusted bool      `json:"annotations_trusted,omitempty"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description,omitempty"`
+	Transport       string    `json:"transport"`
+	State           string    `json:"state"`
+	Connected       bool      `json:"connected"`
+	LastError       string    `json:"last_error,omitempty"`
+	ToolCount       int       `json:"tool_count"`
+	CachedAt        time.Time `json:"cached_at,omitempty"`
+	ProjectArgument string    `json:"project_argument,omitempty"`
+	ProjectRequired bool      `json:"project_required,omitempty"`
 }
 
 type cachedTools struct {
@@ -202,40 +201,6 @@ func (m *Manager) PrepareToolArguments(server, project string, args map[string]a
 	return out, nil
 }
 
-func (m *Manager) CallReadOnlyTool(ctx context.Context, server, tool string, args map[string]any) (*mcp.CallToolResult, error) {
-	ms, err := m.get(server)
-	if err != nil {
-		return nil, err
-	}
-	ms.mu.Lock()
-	trusted := ms.cfg.TrustAnnotations
-	ms.mu.Unlock()
-	if !trusted {
-		return nil, fmt.Errorf("server %q is not trusted for annotation-based read-only calls", server)
-	}
-	tools, err := m.ListTools(ctx, server, true)
-	if err != nil {
-		return nil, err
-	}
-	found, readOnly := toolReadOnly(tools, tool)
-	if !found {
-		return nil, fmt.Errorf("tool %q not found on server %q", tool, server)
-	}
-	if !readOnly {
-		return nil, fmt.Errorf("tool %q on server %q is not declared read-only", tool, server)
-	}
-	return m.CallTool(ctx, server, tool, args)
-}
-
-func toolReadOnly(tools []*mcp.Tool, name string) (found, readOnly bool) {
-	for _, t := range tools {
-		if t.Name == name {
-			return true, t.Annotations != nil && t.Annotations.ReadOnlyHint
-		}
-	}
-	return false, false
-}
-
 func (m *Manager) CallTool(ctx context.Context, server, tool string, args map[string]any) (*mcp.CallToolResult, error) {
 	ms, err := m.get(server)
 	if err != nil {
@@ -289,7 +254,7 @@ func (m *Manager) Status() []ManagedServer {
 		} else if ms.lastErr != "" {
 			state = "error"
 		}
-		v := ManagedServer{Name: n, Description: ms.cfg.Description, Transport: ms.cfg.TransportName(), State: state, Connected: ms.session != nil, LastError: ms.lastErr, ToolCount: len(ms.tools.tools), CachedAt: ms.tools.at, ProjectArgument: ms.cfg.ProjectArgument, ProjectRequired: ms.cfg.RequireProject, AnnotationsTrusted: ms.cfg.TrustAnnotations}
+		v := ManagedServer{Name: n, Description: ms.cfg.Description, Transport: ms.cfg.TransportName(), State: state, Connected: ms.session != nil, LastError: ms.lastErr, ToolCount: len(ms.tools.tools), CachedAt: ms.tools.at, ProjectArgument: ms.cfg.ProjectArgument, ProjectRequired: ms.cfg.RequireProject}
 		ms.mu.Unlock()
 		out = append(out, v)
 	}

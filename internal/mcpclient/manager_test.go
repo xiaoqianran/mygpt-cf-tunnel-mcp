@@ -1,12 +1,9 @@
 package mcpclient
 
 import (
-	"context"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/xiaoqianran/mygpt-cf-tunnel-mcp/internal/config"
 )
 
@@ -14,7 +11,7 @@ func projectManager() *Manager {
 	return NewManager(config.Registry{
 		Projects: map[string]string{"embodiedgen": "/srv/EmbodiedGen"},
 		Servers: map[string]config.Server{
-			"codegraph": {Transport: "stdio", Command: "codegraph", ProjectArgument: "projectPath", RequireProject: true, TrustAnnotations: true},
+			"codegraph": {Transport: "stdio", Command: "codegraph", ProjectArgument: "projectPath", RequireProject: true},
 			"docs":      {Transport: "stdio", Command: "docs"},
 		},
 	}, time.Minute)
@@ -40,28 +37,6 @@ func TestPrepareToolArguments(t *testing.T) {
 	}
 	if _, err := m.PrepareToolArguments("docs", "embodiedgen", nil); err == nil {
 		t.Fatal("expected unsupported project error")
-	}
-}
-
-func TestToolReadOnly(t *testing.T) {
-	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
-	tools := []*mcp.Tool{{Name: "read", Annotations: readOnly}, {Name: "write"}}
-	if found, ok := toolReadOnly(tools, "read"); !found || !ok {
-		t.Fatal("read tool should be recognized as read-only")
-	}
-	if found, ok := toolReadOnly(tools, "write"); !found || ok {
-		t.Fatal("unannotated tool must not be treated as read-only")
-	}
-	if found, _ := toolReadOnly(tools, "missing"); found {
-		t.Fatal("missing tool reported as found")
-	}
-}
-
-func TestReadOnlyToolRequiresTrustedAnnotations(t *testing.T) {
-	m := projectManager()
-	_, err := m.CallReadOnlyTool(context.Background(), "docs", "read", nil)
-	if err == nil || !strings.Contains(err.Error(), "not trusted") {
-		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

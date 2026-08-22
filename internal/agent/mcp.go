@@ -14,16 +14,15 @@ import (
 )
 
 type serverView struct {
-	Name               string `json:"name"`
-	Description        string `json:"description,omitempty"`
-	Transport          string `json:"transport"`
-	State              string `json:"state"`
-	Connected          bool   `json:"connected"`
-	ToolCount          int    `json:"tool_count"`
-	LastError          string `json:"last_error,omitempty"`
-	ProjectArgument    string `json:"project_argument,omitempty"`
-	ProjectRequired    bool   `json:"project_required,omitempty"`
-	AnnotationsTrusted bool   `json:"annotations_trusted,omitempty"`
+	Name            string `json:"name"`
+	Description     string `json:"description,omitempty"`
+	Transport       string `json:"transport"`
+	State           string `json:"state"`
+	Connected       bool   `json:"connected"`
+	ToolCount       int    `json:"tool_count"`
+	LastError       string `json:"last_error,omitempty"`
+	ProjectArgument string `json:"project_argument,omitempty"`
+	ProjectRequired bool   `json:"project_required,omitempty"`
 }
 type searchRequest struct {
 	Query   string `json:"query"`
@@ -32,15 +31,14 @@ type searchRequest struct {
 	Refresh bool   `json:"refresh,omitempty"`
 }
 type toolView struct {
-	Server             string               `json:"server"`
-	Name               string               `json:"name"`
-	Title              string               `json:"title,omitempty"`
-	Description        string               `json:"description,omitempty"`
-	InputSchema        any                  `json:"input_schema,omitempty"`
-	OutputSchema       any                  `json:"output_schema,omitempty"`
-	Annotations        *mcp.ToolAnnotations `json:"annotations,omitempty"`
-	ProjectRequired    bool                 `json:"project_required,omitempty"`
-	AnnotationsTrusted bool                 `json:"annotations_trusted,omitempty"`
+	Server          string               `json:"server"`
+	Name            string               `json:"name"`
+	Title           string               `json:"title,omitempty"`
+	Description     string               `json:"description,omitempty"`
+	InputSchema     any                  `json:"input_schema,omitempty"`
+	OutputSchema    any                  `json:"output_schema,omitempty"`
+	Annotations     *mcp.ToolAnnotations `json:"annotations,omitempty"`
+	ProjectRequired bool                 `json:"project_required,omitempty"`
 }
 
 type instructionView struct {
@@ -93,7 +91,7 @@ func (s *Server) listServers(w http.ResponseWriter, r *http.Request) {
 	statuses := s.mcp.Status()
 	out := make([]serverView, 0, len(statuses))
 	for _, v := range statuses {
-		out = append(out, serverView{Name: v.Name, Description: v.Description, Transport: v.Transport, State: v.State, Connected: v.Connected, ToolCount: v.ToolCount, LastError: v.LastError, ProjectArgument: v.ProjectArgument, ProjectRequired: v.ProjectRequired, AnnotationsTrusted: v.AnnotationsTrusted})
+		out = append(out, serverView{Name: v.Name, Description: v.Description, Transport: v.Transport, State: v.State, Connected: v.Connected, ToolCount: v.ToolCount, LastError: v.LastError, ProjectArgument: v.ProjectArgument, ProjectRequired: v.ProjectRequired})
 	}
 	writeJSON(w, 200, map[string]any{"servers": out, "projects": s.mcp.ProjectNames()})
 }
@@ -120,12 +118,12 @@ func (s *Server) searchTools(w http.ResponseWriter, r *http.Request) {
 	}
 	statuses := s.mcp.Status()
 	type serverPolicy struct {
-		projectRequired, annotationsTrusted bool
-		projectArgument                     string
+		projectRequired bool
+		projectArgument string
 	}
 	policyByName := make(map[string]serverPolicy, len(statuses))
 	for _, v := range statuses {
-		policyByName[v.Name] = serverPolicy{v.ProjectRequired, v.AnnotationsTrusted, v.ProjectArgument}
+		policyByName[v.Name] = serverPolicy{v.ProjectRequired, v.ProjectArgument}
 	}
 	names := make([]string, 0, len(statuses))
 	if req.Server != "" {
@@ -174,7 +172,7 @@ func (s *Server) searchTools(w http.ResponseWriter, r *http.Request) {
 		for _, t := range tools {
 			hay := strings.ToLower(t.Name + " " + t.Description)
 			if q == "" || strings.Contains(hay, q) {
-				matches = append(matches, toolView{Server: name, Name: t.Name, Title: t.Title, Description: t.Description, InputSchema: t.InputSchema, OutputSchema: t.OutputSchema, Annotations: t.Annotations, ProjectRequired: policy.projectRequired, AnnotationsTrusted: policy.annotationsTrusted})
+				matches = append(matches, toolView{Server: name, Name: t.Name, Title: t.Title, Description: t.Description, InputSchema: t.InputSchema, OutputSchema: t.OutputSchema, Annotations: t.Annotations, ProjectRequired: policy.projectRequired})
 				if len(matches) >= req.Limit {
 					writeJSON(w, 200, map[string]any{"tools": matches, "server_instructions": instructions, "projects": s.mcp.ProjectNames()})
 					return
@@ -185,12 +183,6 @@ func (s *Server) searchTools(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"tools": matches, "server_instructions": instructions, "projects": s.mcp.ProjectNames()})
 }
 func (s *Server) callTool(w http.ResponseWriter, r *http.Request) {
-	s.callToolWithMode(w, r, false)
-}
-func (s *Server) callReadOnlyTool(w http.ResponseWriter, r *http.Request) {
-	s.callToolWithMode(w, r, true)
-}
-func (s *Server) callToolWithMode(w http.ResponseWriter, r *http.Request, readOnly bool) {
 	if err := s.syncRegistry(); err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
@@ -212,12 +204,7 @@ func (s *Server) callToolWithMode(w http.ResponseWriter, r *http.Request, readOn
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.RequestTimeout)
 	defer cancel()
-	var res *mcp.CallToolResult
-	if readOnly {
-		res, err = s.mcp.CallReadOnlyTool(ctx, req.Server, req.Tool, args)
-	} else {
-		res, err = s.mcp.CallTool(ctx, req.Server, req.Tool, args)
-	}
+	res, err := s.mcp.CallTool(ctx, req.Server, req.Tool, args)
 	if err != nil {
 		writeJSON(w, 502, map[string]any{"error": err.Error()})
 		return

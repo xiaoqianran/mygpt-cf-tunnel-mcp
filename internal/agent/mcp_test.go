@@ -58,8 +58,16 @@ func TestOpenAPISchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths := doc["paths"].(map[string]any)
-	if paths["/v1/mcp/tools/call-readonly"] == nil {
-		t.Fatal("missing read-only call path")
+	if len(paths) != 3 {
+		t.Fatalf("expected 3 MyGPT actions, got %d", len(paths))
+	}
+	if paths["/v1/mcp/tools/call-readonly"] != nil {
+		t.Fatal("read-only call path must not be exposed")
+	}
+	callPath := paths["/v1/mcp/tools/call"].(map[string]any)
+	post := callPath["post"].(map[string]any)
+	if consequential, ok := post["x-openai-isConsequential"].(bool); !ok || consequential {
+		t.Fatal("callMcpTool should use the trusted full-access action model")
 	}
 	components := doc["components"].(map[string]any)
 	schemas := components["schemas"].(map[string]any)

@@ -10,9 +10,6 @@ EnvironmentFile=/etc/mygpt-mcp/agent.env
 ExecStart=/usr/local/bin/mygpt-mcp-agent
 Restart=on-failure
 RestartSec=3
-NoNewPrivileges=true
-ProtectSystem=full
-PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

@@ -11,8 +11,8 @@ const openAPISchema = `{
   "openapi":"3.1.0",
   "info":{
     "title":"MyGPT MCP Host",
-    "version":"0.5.0",
-    "description":"面向 MyGPT 的精简 MCP Host。保留上游 MCP 的工具 schema、instructions 与 annotations，并由网关统一执行项目路径和只读策略。"
+    "version":"0.6.0",
+    "description":"面向受信任 MyGPT 的精简 MCP Host。保留上游 MCP 的 schema、instructions 与 annotations；统一由一个通用调用入口执行已注册工具。"
   },
   "servers":[{"url":"https://arm-sg-mcp.202820.xyz"}],
   "paths":{
@@ -20,7 +20,7 @@ const openAPISchema = `{
       "get":{
         "operationId":"listMcpServers",
         "summary":"列出 MCP 服务和项目别名",
-        "description":"需要了解可用 MCP 集成或项目别名时调用。state=idle 表示已配置但尚未建立惰性连接，并不代表故障。",
+        "description":"发现已注册 MCP 集成和项目别名。state=idle 表示惰性连接尚未建立，并非故障。",
         "responses":{"200":{"description":"MCP 服务和项目别名","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ServerListResponse"}}}}}
       }
     },
@@ -28,27 +28,17 @@ const openAPISchema = `{
       "post":{
         "operationId":"searchMcpTools",
         "summary":"发现 MCP 工具及其使用语义",
-        "description":"按能力搜索 MCP 工具。空 query 可枚举指定 server 的工具。返回 input_schema、annotations 和 server_instructions；调用前应遵循这些信息。",
+        "description":"按能力搜索工具。空 query 可枚举指定 server。返回 input/output schema、annotations、server instructions 和项目要求；annotations 仅用于理解工具语义，不作为权限分流。",
         "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SearchToolsRequest"}}}},
         "responses":{"200":{"description":"匹配的 MCP 工具","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ToolSearchResponse"}}}}}
-      }
-    },
-    "/v1/mcp/tools/call-readonly":{
-      "post":{
-        "operationId":"callReadOnlyMcpTool",
-        "summary":"调用只读 MCP 工具",
-        "description":"仅用于 searchMcpTools 返回 annotations.readOnlyHint=true 且 annotations_trusted=true 的工具。网关会再次刷新并校验；其他工具会被拒绝。项目型 server 应传 project 别名，不要在 arguments_json 中直接传项目路径。",
-        "x-openai-isConsequential":false,
-        "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CallToolRequest"}}}},
-        "responses":{"200":{"description":"MCP 工具结果"},"400":{"description":"参数或项目错误"},"502":{"description":"MCP 连接、策略或工具错误"}}
       }
     },
     "/v1/mcp/tools/call":{
       "post":{
         "operationId":"callMcpTool",
-        "summary":"调用可能产生副作用的 MCP 工具",
-        "description":"调用已发现的 MCP 工具。只读工具优先使用 callReadOnlyMcpTool；此入口保留给未声明只读或可能修改外部状态的工具。",
-        "x-openai-isConsequential":true,
+        "summary":"调用 MCP 工具",
+        "description":"统一调用 searchMcpTools 发现的已注册 MCP 工具。项目型 server 使用 project 别名；不要在 arguments_json 中直接传项目绝对路径。",
+        "x-openai-isConsequential":false,
         "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CallToolRequest"}}}},
         "responses":{"200":{"description":"MCP 工具结果"},"400":{"description":"参数或项目错误"},"502":{"description":"MCP 连接、策略或工具错误"}}
       }
@@ -60,7 +50,7 @@ const openAPISchema = `{
         "type":"object",
         "properties":{
           "servers":{"type":"array","items":{"$ref":"#/components/schemas/McpServer"}},
-          "projects":{"type":"array","items":{"type":"string"},"description":"允许用于项目型 MCP server 的项目别名；不暴露服务器绝对路径。"}
+          "projects":{"type":"array","items":{"type":"string"},"description":"项目型 MCP server 可使用的项目别名。"}
         },
         "required":["servers","projects"]
       },
@@ -74,9 +64,8 @@ const openAPISchema = `{
           "connected":{"type":"boolean"},
           "tool_count":{"type":"integer"},
           "last_error":{"type":"string"},
-          "project_argument":{"type":"string","description":"上游工具用于接收项目路径的参数名；仅用于说明，调用时请传 project 别名。"},
-          "project_required":{"type":"boolean"},
-          "annotations_trusted":{"type":"boolean","description":"管理员是否允许此 server 的 annotations 驱动只读免确认策略。"}
+          "project_argument":{"type":"string","description":"上游工具接收项目路径的参数名；调用时仍应使用 project 别名。"},
+          "project_required":{"type":"boolean"}
         },
         "required":["name","transport","state","connected","tool_count"]
       },
@@ -109,8 +98,7 @@ const openAPISchema = `{
           "input_schema":{"type":"object","additionalProperties":true},
           "output_schema":{"type":"object","additionalProperties":true},
           "annotations":{"$ref":"#/components/schemas/ToolAnnotations"},
-          "project_required":{"type":"boolean","description":"为 true 时调用必须传 project 别名。"},
-          "annotations_trusted":{"type":"boolean","description":"为 true 且 readOnlyHint=true 时才可使用 callReadOnlyMcpTool。"}
+          "project_required":{"type":"boolean","description":"为 true 时调用必须传 project 别名。"}
         },
         "required":["server","name"]
       },
@@ -134,7 +122,7 @@ const openAPISchema = `{
         "properties":{
           "server":{"type":"string","description":"已注册 MCP server 别名。"},
           "tool":{"type":"string","description":"searchMcpTools 返回的精确工具名。"},
-          "project":{"type":"string","description":"项目别名。project_required=true 时必填；由网关安全映射到真实路径。"},
+          "project":{"type":"string","description":"项目别名。project_required=true 时必填；由网关映射到真实路径。"},
           "arguments_json":{"type":"string","default":"{}","description":"按 input_schema 构造并编码成字符串的 JSON 对象。不要直接传 project_argument 对应的原始路径。"}
         },
         "required":["server","tool"]
